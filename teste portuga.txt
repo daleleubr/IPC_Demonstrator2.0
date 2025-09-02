@@ -1,6 +1,3 @@
-teste em portuguess
-teste teste asd
-
-asd
-
-asd
+git add .
+git commit -m "mensagem"
+git push
