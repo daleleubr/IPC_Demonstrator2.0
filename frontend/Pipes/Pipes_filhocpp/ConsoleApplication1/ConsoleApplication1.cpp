@@ -1,11 +1,39 @@
 // ConsoleApplication1.cpp : Este arquivo contém a função 'main'. A execução do programa começa e termina ali.
 //
 
-#include <iostream>
+#include <windows.h>
+#include <tchar.h>
+#include <stdio.h>
 
-int main()
-{
-    std::cout << "Hello World!\n";
+int main() {
+    printf("Sou o processo PAI (PID: %d).\n", GetCurrentProcessId());
+
+    STARTUPINFO si = { sizeof(STARTUPINFO) };
+    PROCESS_INFORMATION pi;
+	TCHAR   commandLine[] = TEXT("calc.exe");
+
+    if (!CreateProcess(
+        NULL,           // Nome do aplicativo
+        commandLine,     // Comando para executar a calculadora
+        NULL,           // Atributos de segurança do processo
+        NULL,           // Atributos de segurança da thread
+        FALSE,          // Herança de handles
+        0,              // Flags de criação
+        NULL,           // Ambiente
+        NULL,           // Diretório atual
+        &si,            // STARTUPINFO
+        &pi             // PROCESS_INFORMATION
+    )) {
+        printf("Falha ao criar processo. Erro: %d\n", GetLastError());
+        return 1;
+    }
+
+    printf("Processo filho criado com sucesso! PID: %d\n", pi.dwProcessId);
+    WaitForSingleObject(pi.hProcess, INFINITE); // Espera calculadora fechar
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return 0;
 }
 
 // Executar programa: Ctrl + F5 ou Menu Depurar > Iniciar Sem Depuração
