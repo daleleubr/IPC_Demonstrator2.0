@@ -6,7 +6,7 @@
 int main() {
     setlocale(LC_ALL, "Portuguese_Brazil.1252");  // ← CORREÇÃO DOS CARACTERES
 
-    if (!init_winsock()) return 1;
+    if (!init_winsock()) return 1;  
 
     SOCKET server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == INVALID_SOCKET) {
