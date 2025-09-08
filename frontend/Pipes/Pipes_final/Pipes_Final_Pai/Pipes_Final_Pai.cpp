@@ -43,7 +43,7 @@ int main()
     // Passo 2: Criar o processo filho
     PROCESS_INFORMATION piProcInfo;
     STARTUPINFO siStartInfo;
-    TCHAR szCmdline[] = TEXT("notepad.exe C:\\Windows\\System32\\drivers\\etc\\hosts"); //TCHAR szCmdline[] = TEXT("child_process");    
+    TCHAR szCmdline[] = TEXT("Pipes_Final_FIlho.exe"); //TCHAR szCmdline[] = TEXT("child_process"); //TCHAR szCmdline[] = TEXT("notepad.exe C:\\Windows\\System32\\drivers\\etc\\hosts");     
 
     // Inicializar estruturas
     ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
