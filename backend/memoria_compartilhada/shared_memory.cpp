@@ -1,7 +1,34 @@
 #include "shared_memory.hpp"
 #include <iostream>
 #include <cstring>
-#include <json/json.h>
+#include <windows.h>
+#include <sstream>
+#include <iomanip>
+
+// Função para escapar caracteres especiais no JSON
+std::string escape_json(const std::string& s) {
+    std::ostringstream o;
+    for (auto c = s.cbegin(); c != s.cend(); c++) {
+        switch (*c) {
+        case '"': o << "\\\""; break;
+        case '\\': o << "\\\\"; break;
+        case '\b': o << "\\b"; break;
+        case '\f': o << "\\f"; break;
+        case '\n': o << "\\n"; break;
+        case '\r': o << "\\r"; break;
+        case '\t': o << "\\t"; break;
+        default:
+            if ('\x00' <= *c && *c <= '\x1f') {
+                o << "\\u"
+                    << std::hex << std::setw(4) << std::setfill('0') << (int)*c;
+            }
+            else {
+                o << *c;
+            }
+        }
+    }
+    return o.str();
+}
 
 SharedMemory::SharedMemory(const std::string& name, size_t size)
     : shm_name_(name),
@@ -226,31 +253,37 @@ void SharedMemory::clear_memory() {
 }
 
 std::string SharedMemory::get_status_json() const {
-    Json::Value root;
+    std::string json = "{";
 
-    root["shared_memory"]["name"] = shm_name_;
-    root["shared_memory"]["size"] = static_cast<Json::UInt64>(shm_size_);
-    root["shared_memory"]["initialized"] = is_initialized_;
+    json += "\"shared_memory\":{";
+    json += "\"name\":\"" + shm_name_ + "\",";
+    json += "\"size\":" + std::to_string(shm_size_) + ",";
+    json += "\"initialized\":" + (is_initialized_ ? "true" : "false") + ",";
 
     if (is_initialized_ && shm_ptr_) {
         std::string content(static_cast<char*>(shm_ptr_));
-        root["shared_memory"]["content"] = content;
-        root["shared_memory"]["content_length"] = static_cast<Json::UInt64>(content.size());
+        json += "\"content\":\"" + escape_json(content) + "\",";
+        json += "\"content_length\":" + std::to_string(content.size());
     }
     else {
-        root["shared_memory"]["content"] = "";
-        root["shared_memory"]["content_length"] = 0;
+        json += "\"content\":\"\",";
+        json += "\"content_length\":0";
     }
+    json += "},";
 
-    // Get semaphore values (Windows doesn't have a direct way to get semaphore count)
-    root["semaphores"]["write_semaphore"]["name"] = sem_write_name_;
-    root["semaphores"]["write_semaphore"]["available"] = (sem_write_ != NULL);
+    json += "\"semaphores\":{";
+    json += "\"write_semaphore\":{";
+    json += "\"name\":\"" + sem_write_name_ + "\",";
+    json += "\"available\":" + (sem_write_ != NULL ? "true" : "false");
+    json += "},";
+    json += "\"read_semaphore\":{";
+    json += "\"name\":\"" + sem_read_name_ + "\",";
+    json += "\"available\":" + (sem_read_ != NULL ? "true" : "false");
+    json += "}";
+    json += "}";
 
-    root["semaphores"]["read_semaphore"]["name"] = sem_read_name_;
-    root["semaphores"]["read_semaphore"]["available"] = (sem_read_ != NULL);
-
-    Json::StreamWriterBuilder writer;
-    return Json::writeString(writer, root);
+    json += "}";
+    return json;
 }
 
 void SharedMemory::cleanup() {
