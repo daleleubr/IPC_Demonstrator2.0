@@ -1,29 +1,28 @@
 #include "shared_memory.hpp"
 #include <iostream>
 #include <cstring>
-#include <windows.h>
 #include <sstream>
 #include <iomanip>
-
-// Função para escapar caracteres especiais no JSON
-std::string escape_json(const std::string& s) {
+static std::string escape_json(const std::string& s) {
     std::ostringstream o;
-    for (auto c = s.cbegin(); c != s.cend(); c++) {
-        switch (*c) {
-        case '"': o << "\\\""; break;
+    for (unsigned char ch : s) {
+        switch (ch) {
+        case '\"': o << "\\\""; break;
         case '\\': o << "\\\\"; break;
-        case '\b': o << "\\b"; break;
-        case '\f': o << "\\f"; break;
-        case '\n': o << "\\n"; break;
-        case '\r': o << "\\r"; break;
-        case '\t': o << "\\t"; break;
+        case '\b': o << "\\b";  break;
+        case '\f': o << "\\f";  break;
+        case '\n': o << "\\n";  break;
+        case '\r': o << "\\r";  break;
+        case '\t': o << "\\t";  break;
         default:
-            if ('\x00' <= *c && *c <= '\x1f') {
+            if (ch < 0x20) {
                 o << "\\u"
-                    << std::hex << std::setw(4) << std::setfill('0') << (int)*c;
+                    << std::hex << std::setw(4) << std::setfill('0')
+                    << static_cast<int>(ch);
+                o << std::dec;
             }
             else {
-                o << *c;
+                o << static_cast<char>(ch);
             }
         }
     }
@@ -34,7 +33,7 @@ SharedMemory::SharedMemory(const std::string& name, size_t size)
     : shm_name_(name),
     sem_write_name_(name + "_write_sem"),
     sem_read_name_(name + "_read_sem"),
-    shm_size_(size + 1), // +1 for null terminator
+    shm_size_(size + 1),
     hMapFile_(NULL),
     shm_ptr_(nullptr),
     sem_write_(NULL),
@@ -47,18 +46,14 @@ SharedMemory::~SharedMemory() {
 }
 
 bool SharedMemory::initialize() {
-    // Try to open existing shared memory first
     if (!open_shared_memory()) {
-        // If it doesn't exist, create it
         if (!create_shared_memory()) {
             std::cerr << "Failed to create shared memory" << std::endl;
             return false;
         }
     }
 
-    // Try to open existing semaphores
     if (!open_semaphores()) {
-        // If they don't exist, create them
         if (!create_semaphores()) {
             std::cerr << "Failed to create semaphores" << std::endl;
             cleanup();
@@ -71,62 +66,38 @@ bool SharedMemory::initialize() {
 }
 
 bool SharedMemory::create_shared_memory() {
-    // Create shared memory
-    hMapFile_ = CreateFileMapping(
-        INVALID_HANDLE_VALUE,   // use paging file
-        NULL,                   // default security
-        PAGE_READWRITE,         // read/write access
-        0,                      // maximum object size (high-order DWORD)
-        shm_size_,              // maximum object size (low-order DWORD)
-        shm_name_.c_str()       // name of mapping object
+    hMapFile_ = CreateFileMappingA(
+        INVALID_HANDLE_VALUE,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        (DWORD)shm_size_,
+        shm_name_.c_str()
     );
 
-    if (hMapFile_ == NULL) {
+    if (!hMapFile_) {
         std::cerr << "CreateFileMapping failed: " << GetLastError() << std::endl;
         return false;
     }
 
-    // Map shared memory
-    shm_ptr_ = MapViewOfFile(
-        hMapFile_,              // handle to map object
-        FILE_MAP_ALL_ACCESS,    // read/write permission
-        0,
-        0,
-        shm_size_
-    );
-
-    if (shm_ptr_ == NULL) {
+    shm_ptr_ = MapViewOfFile(hMapFile_, FILE_MAP_ALL_ACCESS, 0, 0, shm_size_);
+    if (!shm_ptr_) {
         std::cerr << "MapViewOfFile failed: " << GetLastError() << std::endl;
         CloseHandle(hMapFile_);
         hMapFile_ = NULL;
         return false;
     }
 
-    // Initialize with empty string
     memset(shm_ptr_, 0, shm_size_);
     return true;
 }
 
 bool SharedMemory::open_shared_memory() {
-    hMapFile_ = OpenFileMapping(
-        FILE_MAP_ALL_ACCESS,    // read/write access
-        FALSE,                  // do not inherit the name
-        shm_name_.c_str()       // name of mapping object
-    );
+    hMapFile_ = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, shm_name_.c_str());
+    if (!hMapFile_) return false;
 
-    if (hMapFile_ == NULL) {
-        return false;
-    }
-
-    shm_ptr_ = MapViewOfFile(
-        hMapFile_,              // handle to map object
-        FILE_MAP_ALL_ACCESS,    // read/write permission
-        0,
-        0,
-        shm_size_
-    );
-
-    if (shm_ptr_ == NULL) {
+    shm_ptr_ = MapViewOfFile(hMapFile_, FILE_MAP_ALL_ACCESS, 0, 0, shm_size_);
+    if (!shm_ptr_) {
         std::cerr << "MapViewOfFile failed: " << GetLastError() << std::endl;
         CloseHandle(hMapFile_);
         hMapFile_ = NULL;
@@ -137,28 +108,14 @@ bool SharedMemory::open_shared_memory() {
 }
 
 bool SharedMemory::create_semaphores() {
-    // Create write semaphore (initialized to 1 - available for writing)
-    sem_write_ = CreateSemaphore(
-        NULL,           // default security attributes
-        1,              // initial count
-        1,              // maximum count
-        sem_write_name_.c_str()
-    );
-
-    if (sem_write_ == NULL) {
+    sem_write_ = CreateSemaphoreA(NULL, 1, 1, sem_write_name_.c_str());
+    if (!sem_write_) {
         std::cerr << "CreateSemaphore write failed: " << GetLastError() << std::endl;
         return false;
     }
 
-    // Create read semaphore (initialized to 0 - nothing to read initially)
-    sem_read_ = CreateSemaphore(
-        NULL,           // default security attributes
-        0,              // initial count
-        1,              // maximum count
-        sem_read_name_.c_str()
-    );
-
-    if (sem_read_ == NULL) {
+    sem_read_ = CreateSemaphoreA(NULL, 0, 1, sem_read_name_.c_str());
+    if (!sem_read_) {
         std::cerr << "CreateSemaphore read failed: " << GetLastError() << std::endl;
         CloseHandle(sem_write_);
         sem_write_ = NULL;
@@ -169,23 +126,11 @@ bool SharedMemory::create_semaphores() {
 }
 
 bool SharedMemory::open_semaphores() {
-    sem_write_ = OpenSemaphore(
-        SEMAPHORE_ALL_ACCESS,
-        FALSE,
-        sem_write_name_.c_str()
-    );
+    sem_write_ = OpenSemaphoreA(SEMAPHORE_ALL_ACCESS, FALSE, sem_write_name_.c_str());
+    if (!sem_write_) return false;
 
-    if (sem_write_ == NULL) {
-        return false;
-    }
-
-    sem_read_ = OpenSemaphore(
-        SEMAPHORE_ALL_ACCESS,
-        FALSE,
-        sem_read_name_.c_str()
-    );
-
-    if (sem_read_ == NULL) {
+    sem_read_ = OpenSemaphoreA(SEMAPHORE_ALL_ACCESS, FALSE, sem_read_name_.c_str());
+    if (!sem_read_) {
         CloseHandle(sem_write_);
         sem_write_ = NULL;
         return false;
@@ -195,55 +140,36 @@ bool SharedMemory::open_semaphores() {
 }
 
 bool SharedMemory::write_data(const std::string& data) {
-    if (!is_initialized_) {
-        std::cerr << "Shared memory not initialized" << std::endl;
-        return false;
-    }
+    if (!is_initialized_) return false;
+    if (data.size() >= shm_size_) return false;
 
-    if (data.size() >= shm_size_) {
-        std::cerr << "Data too large for shared memory" << std::endl;
-        return false;
-    }
+    if (WaitForSingleObject(sem_write_, INFINITE) != WAIT_OBJECT_0) return false;
 
-    // Wait for write semaphore
-    if (WaitForSingleObject(sem_write_, INFINITE) != WAIT_OBJECT_0) {
-        std::cerr << "WaitForSingleObject write failed: " << GetLastError() << std::endl;
-        return false;
-    }
-
-    // Write data to shared memory
     memcpy(shm_ptr_, data.c_str(), data.size());
     static_cast<char*>(shm_ptr_)[data.size()] = '\0';
 
-    // Post read semaphore
-    if (!ReleaseSemaphore(sem_read_, 1, NULL)) {
-        std::cerr << "ReleaseSemaphore read failed: " << GetLastError() << std::endl;
-        return false;
-    }
-
+    ReleaseSemaphore(sem_read_, 1, NULL);
     return true;
 }
 
 std::string SharedMemory::read_data() {
-    if (!is_initialized_) {
-        return "ERROR: Shared memory not initialized";
+    if (!is_initialized_) return "ERROR: Shared memory not initialized";
+
+    // Tenta consumir semáforo sem bloquear (timeout 0 ms).
+    DWORD w = WaitForSingleObject(sem_read_, 0);
+    if (w == WAIT_OBJECT_0) {
+        // Havia sinal: consome e libera escrita
+        std::string data(static_cast<char*>(shm_ptr_));
+        ReleaseSemaphore(sem_write_, 1, NULL);
+        return data;
     }
-
-    // Wait for read semaphore
-    if (WaitForSingleObject(sem_read_, INFINITE) != WAIT_OBJECT_0) {
-        std::cerr << "WaitForSingleObject read failed: " << GetLastError() << std::endl;
-        return "ERROR: Failed to acquire read semaphore";
+    if (w == WAIT_TIMEOUT) {
+        // Não havia sinal (porque o processo writer já morreu e os semáforos foram recriados com 0)
+        // Retorna o conteúdo atual mesmo assim, sem bloquear.
+        return std::string(static_cast<char*>(shm_ptr_));
     }
-
-    // Read data from shared memory
-    std::string data(static_cast<char*>(shm_ptr_));
-
-    // Post write semaphore
-    if (!ReleaseSemaphore(sem_write_, 1, NULL)) {
-        std::cerr << "ReleaseSemaphore write failed: " << GetLastError() << std::endl;
-    }
-
-    return data;
+    // Qualquer outro erro
+    return "ERROR: read wait failed";
 }
 
 void SharedMemory::clear_memory() {
@@ -253,53 +179,45 @@ void SharedMemory::clear_memory() {
 }
 
 std::string SharedMemory::get_status_json() const {
-    std::string json = "{";
+    std::ostringstream os;
 
-    json += "\"shared_memory\":{";
-    json += "\"name\":\"" + shm_name_ + "\",";
-    json += "\"size\":" + std::to_string(shm_size_) + ",";
-    json += "\"initialized\":" + (is_initialized_ ? "true" : "false") + ",";
-
+    std::string content;
     if (is_initialized_ && shm_ptr_) {
-        std::string content(static_cast<char*>(shm_ptr_));
-        json += "\"content\":\"" + escape_json(content) + "\",";
-        json += "\"content_length\":" + std::to_string(content.size());
+        content = static_cast<char*>(shm_ptr_);
     }
-    else {
-        json += "\"content\":\"\",";
-        json += "\"content_length\":0";
-    }
-    json += "},";
 
-    json += "\"semaphores\":{";
-    json += "\"write_semaphore\":{";
-    json += "\"name\":\"" + sem_write_name_ + "\",";
-    json += "\"available\":" + (sem_write_ != NULL ? "true" : "false");
-    json += "},";
-    json += "\"read_semaphore\":{";
-    json += "\"name\":\"" + sem_read_name_ + "\",";
-    json += "\"available\":" + (sem_read_ != NULL ? "true" : "false");
-    json += "}";
-    json += "}";
+    os << "{"
+        << "\"shared_memory\":{"
+        << "\"name\":\"" << escape_json(shm_name_) << "\","
+        << "\"size\":" << (unsigned long long)shm_size_ << ","
+        << "\"initialized\":" << (is_initialized_ ? "true" : "false") << ","
+        << "\"content\":\"" << escape_json(content) << "\","
+        << "\"content_length\":" << (unsigned long long)content.size()
+        << "},"
+        << "\"semaphores\":{"
+        << "\"write_semaphore\":{"
+        << "\"name\":\"" << escape_json(sem_write_name_) << "\","
+        << "\"available\":" << (sem_write_ ? "true" : "false")
+        << "},"
+        << "\"read_semaphore\":{"
+        << "\"name\":\"" << escape_json(sem_read_name_) << "\","
+        << "\"available\":" << (sem_read_ ? "true" : "false")
+        << "}"
+        << "}"
+        << "}";
 
-    json += "}";
-    return json;
+    return os.str();
 }
 
 void SharedMemory::cleanup() {
-    // Unmap shared memory
     if (shm_ptr_) {
         UnmapViewOfFile(shm_ptr_);
         shm_ptr_ = nullptr;
     }
-
-    // Close shared memory handle
     if (hMapFile_) {
         CloseHandle(hMapFile_);
         hMapFile_ = NULL;
     }
-
-    // Close semaphores
     if (sem_write_) {
         CloseHandle(sem_write_);
         sem_write_ = NULL;
@@ -308,6 +226,5 @@ void SharedMemory::cleanup() {
         CloseHandle(sem_read_);
         sem_read_ = NULL;
     }
-
     is_initialized_ = false;
 }
