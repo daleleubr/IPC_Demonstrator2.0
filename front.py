@@ -99,7 +99,7 @@ class FrontIPC(tk.Tk):
 
     def _build_sockets(self, parent):
         r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
-        ttk.Label(r1, text="Mensagem do cliente (se suportado):").pack(side=tk.LEFT)
+        ttk.Label(r1, text="Mensagem do cliente").pack(side=tk.LEFT)
         self.msg_sock = ttk.Entry(r1); self.msg_sock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
         self.msg_sock.insert(0, "OiSockets")
 
