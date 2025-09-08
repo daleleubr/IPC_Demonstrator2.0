@@ -19,10 +19,10 @@ EXE_PIPES_FILHO = (HERE / "frontend" / "Pipes" / "Pipes_final" / "Pipes_Final_FI
 
 # Sockets (compile seus .cpp em .exe com esses nomes)
 EXE_SOCK_SERVER = (HERE / "backend" / "sockets" / "server.exe").resolve()
-EXE_SOCK_CLIENT = (HERE / "backend" / "sockets" / "client.exe").resolve()
+EXE_SOCK_CLIENT = (HERE / "backend" / "sockets" / "cliente.exe").resolve()
 
 # Memória Compartilhada (placeholder)
-EXE_SHM         = (HERE / "backend" / "memoria_compartilhada" / "shm_app.exe").resolve()
+EXE_SHM         = (HERE / "backend" / "memoria_compartilhada" / "shared_memory.exe").resolve()
 
 # =========================
 # App
@@ -90,7 +90,7 @@ class FrontIPC(tk.Tk):
         r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
         ttk.Label(r1, text="Mensagem (se seus binários aceitarem argv[1]):").pack(side=tk.LEFT)
         self.msg_pipes = ttk.Entry(r1); self.msg_pipes.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_pipes.insert(0, "OlaMundoDoPipe")
+        self.msg_pipes.insert(0, "OiPipes")
 
         r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
         ttk.Button(r2, text="Iniciar PAI", command=self.start_pipes_pai).pack(side=tk.LEFT)
@@ -101,7 +101,7 @@ class FrontIPC(tk.Tk):
         r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
         ttk.Label(r1, text="Mensagem do cliente (se suportado):").pack(side=tk.LEFT)
         self.msg_sock = ttk.Entry(r1); self.msg_sock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_sock.insert(0, "Olá servidor (o cliente atual pode ignorar)")
+        self.msg_sock.insert(0, "OiSockets")
 
         r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
         ttk.Button(r2, text="Iniciar Servidor", command=self.start_sock_server).pack(side=tk.LEFT)
@@ -112,7 +112,7 @@ class FrontIPC(tk.Tk):
         r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
         ttk.Label(r1, text="Mensagem (se suportado):").pack(side=tk.LEFT)
         self.msg_shm = ttk.Entry(r1); self.msg_shm.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_shm.insert(0, "Hello SHM")
+        self.msg_shm.insert(0, "OiMemoriaCompartilhada")
 
         r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
         ttk.Button(r2, text="Executar SHM", command=self.start_shm).pack(side=tk.LEFT)
