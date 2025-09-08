@@ -44,7 +44,13 @@ int main(int argc, char* argv[]) {
     }
     else if (command == "read") {
         std::string data = shm.read_data();
-        std::cout << "{\"ok\":true,\"event\":\"read\",\"data\":\"" << escape_json(data) << "\"}\n";
+        std::string preview = data.size() > 80 ? (data.substr(0, 77) + "...") : data;
+        std::cout
+            << "{\"ok\":true,"
+            << "\"event\":\"read\","
+            << "\"data\":\"" << escape_json(data) << "\","
+            << "\"message\":\"SHM read: " << escape_json(preview) << "\"}"
+            << std::endl;
     }
     else if (command == "status") {
         std::cout << shm.get_status_json() << "\n";
