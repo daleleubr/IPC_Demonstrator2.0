@@ -1,20 +1,17 @@
 #include "shared_memory.hpp"
 #include <iostream>
 #include <cstring>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include <json/json.h>
 
 SharedMemory::SharedMemory(const std::string& name, size_t size)
-    : shm_name_("/" + name),
-    sem_write_name_("/" + name + "_write_sem"),
-    sem_read_name_("/" + name + "_read_sem"),
+    : shm_name_(name),
+    sem_write_name_(name + "_write_sem"),
+    sem_read_name_(name + "_read_sem"),
     shm_size_(size + 1), // +1 for null terminator
-    shm_fd_(-1),
+    hMapFile_(NULL),
     shm_ptr_(nullptr),
-    sem_write_(SEM_FAILED),
-    sem_read_(SEM_FAILED),
+    sem_write_(NULL),
+    sem_read_(NULL),
     is_initialized_(false) {
 }
 
@@ -48,22 +45,33 @@ bool SharedMemory::initialize() {
 
 bool SharedMemory::create_shared_memory() {
     // Create shared memory
-    shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR, 0666);
-    if (shm_fd_ == -1) {
-        perror("shm_open");
-        return false;
-    }
+    hMapFile_ = CreateFileMapping(
+        INVALID_HANDLE_VALUE,   // use paging file
+        NULL,                   // default security
+        PAGE_READWRITE,         // read/write access
+        0,                      // maximum object size (high-order DWORD)
+        shm_size_,              // maximum object size (low-order DWORD)
+        shm_name_.c_str()       // name of mapping object
+    );
 
-    // Set size
-    if (ftruncate(shm_fd_, shm_size_) == -1) {
-        perror("ftruncate");
+    if (hMapFile_ == NULL) {
+        std::cerr << "CreateFileMapping failed: " << GetLastError() << std::endl;
         return false;
     }
 
     // Map shared memory
-    shm_ptr_ = mmap(nullptr, shm_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-    if (shm_ptr_ == MAP_FAILED) {
-        perror("mmap");
+    shm_ptr_ = MapViewOfFile(
+        hMapFile_,              // handle to map object
+        FILE_MAP_ALL_ACCESS,    // read/write permission
+        0,
+        0,
+        shm_size_
+    );
+
+    if (shm_ptr_ == NULL) {
+        std::cerr << "MapViewOfFile failed: " << GetLastError() << std::endl;
+        CloseHandle(hMapFile_);
+        hMapFile_ = NULL;
         return false;
     }
 
@@ -73,14 +81,28 @@ bool SharedMemory::create_shared_memory() {
 }
 
 bool SharedMemory::open_shared_memory() {
-    shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
-    if (shm_fd_ == -1) {
+    hMapFile_ = OpenFileMapping(
+        FILE_MAP_ALL_ACCESS,    // read/write access
+        FALSE,                  // do not inherit the name
+        shm_name_.c_str()       // name of mapping object
+    );
+
+    if (hMapFile_ == NULL) {
         return false;
     }
 
-    shm_ptr_ = mmap(nullptr, shm_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-    if (shm_ptr_ == MAP_FAILED) {
-        perror("mmap");
+    shm_ptr_ = MapViewOfFile(
+        hMapFile_,              // handle to map object
+        FILE_MAP_ALL_ACCESS,    // read/write permission
+        0,
+        0,
+        shm_size_
+    );
+
+    if (shm_ptr_ == NULL) {
+        std::cerr << "MapViewOfFile failed: " << GetLastError() << std::endl;
+        CloseHandle(hMapFile_);
+        hMapFile_ = NULL;
         return false;
     }
 
@@ -89,16 +111,30 @@ bool SharedMemory::open_shared_memory() {
 
 bool SharedMemory::create_semaphores() {
     // Create write semaphore (initialized to 1 - available for writing)
-    sem_write_ = sem_open(sem_write_name_.c_str(), O_CREAT, 0666, 1);
-    if (sem_write_ == SEM_FAILED) {
-        perror("sem_open write");
+    sem_write_ = CreateSemaphore(
+        NULL,           // default security attributes
+        1,              // initial count
+        1,              // maximum count
+        sem_write_name_.c_str()
+    );
+
+    if (sem_write_ == NULL) {
+        std::cerr << "CreateSemaphore write failed: " << GetLastError() << std::endl;
         return false;
     }
 
     // Create read semaphore (initialized to 0 - nothing to read initially)
-    sem_read_ = sem_open(sem_read_name_.c_str(), O_CREAT, 0666, 0);
-    if (sem_read_ == SEM_FAILED) {
-        perror("sem_open read");
+    sem_read_ = CreateSemaphore(
+        NULL,           // default security attributes
+        0,              // initial count
+        1,              // maximum count
+        sem_read_name_.c_str()
+    );
+
+    if (sem_read_ == NULL) {
+        std::cerr << "CreateSemaphore read failed: " << GetLastError() << std::endl;
+        CloseHandle(sem_write_);
+        sem_write_ = NULL;
         return false;
     }
 
@@ -106,13 +142,25 @@ bool SharedMemory::create_semaphores() {
 }
 
 bool SharedMemory::open_semaphores() {
-    sem_write_ = sem_open(sem_write_name_.c_str(), 0);
-    if (sem_write_ == SEM_FAILED) {
+    sem_write_ = OpenSemaphore(
+        SEMAPHORE_ALL_ACCESS,
+        FALSE,
+        sem_write_name_.c_str()
+    );
+
+    if (sem_write_ == NULL) {
         return false;
     }
 
-    sem_read_ = sem_open(sem_read_name_.c_str(), 0);
-    if (sem_read_ == SEM_FAILED) {
+    sem_read_ = OpenSemaphore(
+        SEMAPHORE_ALL_ACCESS,
+        FALSE,
+        sem_read_name_.c_str()
+    );
+
+    if (sem_read_ == NULL) {
+        CloseHandle(sem_write_);
+        sem_write_ = NULL;
         return false;
     }
 
@@ -131,8 +179,8 @@ bool SharedMemory::write_data(const std::string& data) {
     }
 
     // Wait for write semaphore
-    if (sem_wait(sem_write_) == -1) {
-        perror("sem_wait write");
+    if (WaitForSingleObject(sem_write_, INFINITE) != WAIT_OBJECT_0) {
+        std::cerr << "WaitForSingleObject write failed: " << GetLastError() << std::endl;
         return false;
     }
 
@@ -141,8 +189,8 @@ bool SharedMemory::write_data(const std::string& data) {
     static_cast<char*>(shm_ptr_)[data.size()] = '\0';
 
     // Post read semaphore
-    if (sem_post(sem_read_) == -1) {
-        perror("sem_post read");
+    if (!ReleaseSemaphore(sem_read_, 1, NULL)) {
+        std::cerr << "ReleaseSemaphore read failed: " << GetLastError() << std::endl;
         return false;
     }
 
@@ -155,8 +203,8 @@ std::string SharedMemory::read_data() {
     }
 
     // Wait for read semaphore
-    if (sem_wait(sem_read_) == -1) {
-        perror("sem_wait read");
+    if (WaitForSingleObject(sem_read_, INFINITE) != WAIT_OBJECT_0) {
+        std::cerr << "WaitForSingleObject read failed: " << GetLastError() << std::endl;
         return "ERROR: Failed to acquire read semaphore";
     }
 
@@ -164,8 +212,8 @@ std::string SharedMemory::read_data() {
     std::string data(static_cast<char*>(shm_ptr_));
 
     // Post write semaphore
-    if (sem_post(sem_write_) == -1) {
-        perror("sem_post write");
+    if (!ReleaseSemaphore(sem_write_, 1, NULL)) {
+        std::cerr << "ReleaseSemaphore write failed: " << GetLastError() << std::endl;
     }
 
     return data;
@@ -194,22 +242,12 @@ std::string SharedMemory::get_status_json() const {
         root["shared_memory"]["content_length"] = 0;
     }
 
-    // Get semaphore values
-    int write_val = -1, read_val = -1;
-    if (sem_write_ != SEM_FAILED) {
-        sem_getvalue(sem_write_, &write_val);
-    }
-    if (sem_read_ != SEM_FAILED) {
-        sem_getvalue(sem_read_, &read_val);
-    }
-
+    // Get semaphore values (Windows doesn't have a direct way to get semaphore count)
     root["semaphores"]["write_semaphore"]["name"] = sem_write_name_;
-    root["semaphores"]["write_semaphore"]["value"] = write_val;
-    root["semaphores"]["write_semaphore"]["available"] = (write_val > 0);
+    root["semaphores"]["write_semaphore"]["available"] = (sem_write_ != NULL);
 
     root["semaphores"]["read_semaphore"]["name"] = sem_read_name_;
-    root["semaphores"]["read_semaphore"]["value"] = read_val;
-    root["semaphores"]["read_semaphore"]["available"] = (read_val > 0);
+    root["semaphores"]["read_semaphore"]["available"] = (sem_read_ != NULL);
 
     Json::StreamWriterBuilder writer;
     return Json::writeString(writer, root);
@@ -217,21 +255,25 @@ std::string SharedMemory::get_status_json() const {
 
 void SharedMemory::cleanup() {
     // Unmap shared memory
-    if (shm_ptr_ && shm_ptr_ != MAP_FAILED) {
-        munmap(shm_ptr_, shm_size_);
+    if (shm_ptr_) {
+        UnmapViewOfFile(shm_ptr_);
+        shm_ptr_ = nullptr;
     }
 
-    // Close shared memory file descriptor
-    if (shm_fd_ != -1) {
-        close(shm_fd_);
+    // Close shared memory handle
+    if (hMapFile_) {
+        CloseHandle(hMapFile_);
+        hMapFile_ = NULL;
     }
 
     // Close semaphores
-    if (sem_write_ != SEM_FAILED) {
-        sem_close(sem_write_);
+    if (sem_write_) {
+        CloseHandle(sem_write_);
+        sem_write_ = NULL;
     }
-    if (sem_read_ != SEM_FAILED) {
-        sem_close(sem_read_);
+    if (sem_read_) {
+        CloseHandle(sem_read_);
+        sem_read_ = NULL;
     }
 
     is_initialized_ = false;

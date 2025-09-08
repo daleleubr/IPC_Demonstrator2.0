@@ -3,7 +3,7 @@
 
 #include <string>
 #include <cstddef>
-#include <semaphore.h>
+#include <windows.h>
 
 class SharedMemory {
 public:
@@ -26,11 +26,11 @@ private:
     std::string sem_read_name_;
     size_t shm_size_;
 
-    int shm_fd_;
+    HANDLE hMapFile_;
     void* shm_ptr_;
 
-    sem_t* sem_write_;
-    sem_t* sem_read_;
+    HANDLE sem_write_;
+    HANDLE sem_read_;
 
     bool is_initialized_;
 
