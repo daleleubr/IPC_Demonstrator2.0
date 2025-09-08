@@ -4,7 +4,7 @@
 // HENRIQUE - Sistema de comunicação via sockets
 
 int main() {
-    setlocale(LC_ALL, "Portuguese_Brazil.1252");  // ← CORREÇÃO DOS CARACTERES
+    setlocale(LC_ALL, "Portuguese_Brazil.1252");  //Corrigir caracteres especiais
 
     if (!init_winsock()) return 1;  
 
@@ -20,6 +20,7 @@ int main() {
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
+    //Associa o socket ao endereço e porta
     if (bind(server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
         std::cerr << make_json("error", "Falha no bind") << std::endl;
         closesocket(server_socket);

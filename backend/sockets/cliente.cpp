@@ -4,10 +4,12 @@
 // HENRIQUE - Sistema de comunicação via sockets
 
 int main() {
-    setlocale(LC_ALL, "Portuguese_Brazil.1252");  // ← CORREÇÃO DOS CARACTERES
+	setlocale(LC_ALL, "Portuguese_Brazil.1252");  //Corrigir caracteres especiais
 
+	//Inicia Biblioteca Winsock
     if (!init_winsock()) return 1;
 
+	//Cria o socket
     SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == INVALID_SOCKET) {
         std::cerr << make_json("error", "Não foi possível criar socket cliente") << std::endl;
@@ -15,11 +17,13 @@ int main() {
         return 1;
     }
 
+    //configura o servidor
     sockaddr_in hint{};
     hint.sin_family = AF_INET;
     hint.sin_port = htons(PORT);
     hint.sin_addr.s_addr = inet_addr("127.0.0.1");
 
+	//Conecta ao servidor
     if (connect(sock, (sockaddr*)&hint, sizeof(hint)) == SOCKET_ERROR) {
         std::cerr << make_json("error", "Não foi possível conectar ao servidor") << std::endl;
         closesocket(sock);
@@ -27,6 +31,7 @@ int main() {
         return 1;
     }
 
+    //MSG 
     std::cout << make_json("status", "Conectado ao servidor") << std::endl;
 
     std::string msg = "Olá servidor, aqui é o cliente!";
@@ -38,6 +43,7 @@ int main() {
         std::cout << make_json("sent", msg) << std::endl;
     }
 
+	//Recebe a resposta do servidor (**Até 4096 bytes**)
     char buf[4096];
     ZeroMemory(buf, 4096);
 
@@ -53,8 +59,9 @@ int main() {
         std::cerr << make_json("error", "Falha ao receber") << std::endl;
     }
 
-    closesocket(sock);
-    cleanup_winsock();
+	//Fecha o socket e limpa recursos
+	closesocket(sock); //finaliza o socket
+    cleanup_winsock(); //Finaliza o sistema
 
     std::cout << make_json("status", "Cliente finalizado") << std::endl;
     return 0;
