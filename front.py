@@ -101,6 +101,7 @@ class App(tk.Tk):
         ttk.Button(r, text="Status", command=self.shm_status).pack(side=tk.LEFT)
         ttk.Button(r, text="Read", command=self.shm_read).pack(side=tk.LEFT, padx=6)
         ttk.Button(r, text="Clear", command=self.shm_clear).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Write (Hello)", command=self.shm_write_test).pack(side=tk.LEFT, padx=6)
 
     def _show(self, which: str):
         for f in (self.sec_pipes, self.sec_sockets, self.sec_shm):
@@ -232,6 +233,8 @@ class App(tk.Tk):
     def shm_status(self): self._spawn([str(EXE_SHM), "status"], "SHM")
     def shm_read(self):   self._spawn([str(EXE_SHM), "read"],   "SHM")
     def shm_clear(self):  self._spawn([str(EXE_SHM), "clear"],  "SHM")
+    def shm_write_test(self):
+        self._spawn([str(EXE_SHM), "write", "Hello IPC"], "SHM")
 
 if __name__ == "__main__":
     App().mainloop()
