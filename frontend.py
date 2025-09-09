@@ -17,8 +17,8 @@ def find_project_root(start: Path) -> Path:
 PROJECT_ROOT = find_project_root(HERE)
 
 # Ajuste os nomes se os .exe estiverem em Debug/Release etc.
-EXE_PIPES_PAI   = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_Pai.exe").resolve()
-EXE_PIPES_FILHO = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_FIlho.exe").resolve()
+EXE_PIPES_PAI   = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Debug" / "Pipes_Final_Pai.exe").resolve()
+EXE_PIPES_FILHO = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Debug" / "Pipes_Final_FIlho.exe").resolve()
 EXE_SOCK_SERVER = (PROJECT_ROOT / "backend"  / "sockets" / "server.exe").resolve()
 EXE_SOCK_CLIENT = (PROJECT_ROOT / "backend"  / "sockets" / "cliente.exe").resolve()
 EXE_SHM         = (PROJECT_ROOT / "backend"  / "memoria_compartilhada" / "shm_app.exe").resolve()  # versão Win32
