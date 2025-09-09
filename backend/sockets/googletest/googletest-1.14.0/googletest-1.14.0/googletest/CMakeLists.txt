@@ -305,6 +305,7 @@ if (gtest_build_tests)
   py_test(googletest-shuffle-test)
 
   # MSVC 7.1 does not support STL with exceptions disabled.
+
   if (NOT MSVC OR MSVC_VERSION GREATER 1310)
     cxx_executable(googletest-throw-on-failure-test_ test gtest_no_exception)
     set_target_properties(googletest-throw-on-failure-test_
@@ -328,3 +329,4 @@ if (gtest_build_tests)
   py_test(gtest_xml_output_unittest --no_stacktrace_support)
   py_test(googletest-json-output-unittest --no_stacktrace_support)
 endif()
+
