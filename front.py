@@ -1,79 +1,82 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext
-import subprocess
-import threading
-import queue
-import json
-import os
+import subprocess, threading, queue, json, os, platform
 from pathlib import Path
 
-# =========================
-# CONFIG: caminhos fixos
-# Ajuste só aqui se necessário
-# =========================
+# ========= Descobrir raiz do projeto e caminhos =========
 HERE = Path(__file__).resolve().parent
 
-# Pipes (pelo print da sua árvore)
-EXE_PIPES_PAI   = (HERE / "frontend" / "Pipes" / "Pipes_final" / "Pipes_Final_Pai"   / "Pipes_Final_Pai.exe").resolve()
-EXE_PIPES_FILHO = (HERE / "frontend" / "Pipes" / "Pipes_final" / "Pipes_Final_FIlho" / "Pipes_Final_FIlho.exe").resolve()  # atenção ao "FIlho"
+def find_project_root(start: Path) -> Path:
+    p = start
+    for _ in range(6):  # sobe até 6 níveis
+        if (p / "backend").exists():
+            return p
+        p = p.parent
+    return start
 
-# Sockets (compile seus .cpp em .exe com esses nomes)
-EXE_SOCK_SERVER = (HERE / "backend" / "sockets" / "server.exe").resolve()
-EXE_SOCK_CLIENT = (HERE / "backend" / "sockets" / "cliente.exe").resolve()
+PROJECT_ROOT = find_project_root(HERE)
 
-# Memória Compartilhada (placeholder)
-EXE_SHM         = (HERE / "backend" / "memoria_compartilhada" / "shm_app.exe").resolve()
+# Ajuste os nomes se os .exe estiverem em Debug/Release etc.
+EXE_PIPES_PAI   = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_Pai.exe").resolve()
+EXE_PIPES_FILHO = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_FIlho.exe").resolve()
+EXE_SOCK_SERVER = (PROJECT_ROOT / "backend"  / "sockets" / "server.exe").resolve()
+EXE_SOCK_CLIENT = (PROJECT_ROOT / "backend"  / "sockets" / "cliente.exe").resolve()
+EXE_SHM         = (PROJECT_ROOT / "backend"  / "memoria_compartilhada" / "shm_app.exe").resolve()  # versão Win32
 
-# =========================
-# App
-# =========================
 IPC_LIST = ["Pipes", "Sockets", "Memória Compartilhada"]
 
-class FrontIPC(tk.Tk):
+class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("IPC – Frontend de Demonstração")
-        self.geometry("980x620")
+        self.title("IPC – Frontend (com input de mensagem)")
+        self.geometry("980x600")
 
-        # processos
+        self.log_q = queue.Queue()
+        self._seen_output = {}
+
+        # processos que podem ficar vivos (Pipes/Sockets). SHM aqui é execução por comando.
         self.proc_pai = None
         self.proc_filho = None
         self.proc_sock_srv = None
         self.proc_sock_cli = None
-        self.proc_shm = None
 
-        self.log_q = queue.Queue()
-
-        # topo: seletor
-        top = ttk.Frame(self, padding=(10, 10, 10, 0))
+        # topo – seletor
+        top = ttk.Frame(self, padding=(10,10,10,0))
         top.pack(fill=tk.X)
         ttk.Label(top, text="Selecionar IPC:").pack(side=tk.LEFT)
         self.sel = ttk.Combobox(top, values=IPC_LIST, state="readonly", width=28)
-        self.sel.set("Pipes")
+        self.sel.set("Sockets")
         self.sel.pack(side=tk.LEFT, padx=8)
-        self.sel.bind("<<ComboboxSelected>>", self._on_sel)
+        self.sel.bind("<<ComboboxSelected>>", lambda _e: self._show(self.sel.get()))
+
+        # barra de mensagem (global)
+        msgf = ttk.Frame(self, padding=(10,6,10,0))
+        msgf.pack(fill=tk.X)
+        ttk.Label(msgf, text="Mensagem para teste:").pack(side=tk.LEFT)
+        self.msg_var = tk.StringVar(value="Hello IPC")
+        self.msg_entry = ttk.Entry(msgf, textvariable=self.msg_var, width=60)
+        self.msg_entry.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
 
         # container de seções
-        self.container = ttk.Frame(self, padding=10)
-        self.container.pack(fill=tk.X)
+        self.body = ttk.Frame(self, padding=10); self.body.pack(fill=tk.X)
 
-        self.sec_pipes   = ttk.LabelFrame(self.container, text="Pipes", padding=10)
-        self.sec_sockets = ttk.LabelFrame(self.container, text="Sockets", padding=10)
-        self.sec_shm     = ttk.LabelFrame(self.container, text="Memória Compartilhada", padding=10)
+        self.sec_pipes   = ttk.LabelFrame(self.body, text="Pipes", padding=10)
+        self.sec_sockets = ttk.LabelFrame(self.body, text="Sockets", padding=10)
+        self.sec_shm     = ttk.LabelFrame(self.body, text="Memória Compartilhada", padding=10)
 
         self._build_pipes(self.sec_pipes)
         self._build_sockets(self.sec_sockets)
         self._build_shm(self.sec_shm)
 
-        self._show_section("Pipes")
+        self._show(self.sel.get())
 
-        # log
+        # Log
         lf = ttk.LabelFrame(self, text="Log de Comunicação", padding=10)
         lf.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
         self.log = scrolledtext.ScrolledText(lf, state="disabled", wrap=tk.WORD)
         self.log.pack(fill=tk.BOTH, expand=True)
-        # tags de cor
+
+        # Cores
         self.log.tag_config("SYS", foreground="gray50")
         self.log.tag_config("PIPES-PAI", foreground="purple")
         self.log.tag_config("PIPES-FILHO", foreground="medium orchid")
@@ -82,117 +85,90 @@ class FrontIPC(tk.Tk):
         self.log.tag_config("SHM", foreground="brown")
         self.log.tag_config("ERR", foreground="red")
 
-        # loop de drenagem do log
-        self.after(100, self._drain_log)
+        # loop do log
+        self.after(100, self._drain)
 
-    # ---------- seções ----------
+    # --------- UI ---------
     def _build_pipes(self, parent):
-        r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
-        ttk.Label(r1, text="Mensagem (se seus binários aceitarem argv[1]):").pack(side=tk.LEFT)
-        self.msg_pipes = ttk.Entry(r1); self.msg_pipes.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_pipes.insert(0, "OlaMundoDoPipe")
-
-        r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
-        ttk.Button(r2, text="Iniciar PAI", command=self.start_pipes_pai).pack(side=tk.LEFT)
-        ttk.Button(r2, text="Iniciar FILHO", command=self.start_pipes_filho).pack(side=tk.LEFT, padx=6)
-        ttk.Button(r2, text="Parar PAI/FILHO", command=self.stop_pipes).pack(side=tk.LEFT, padx=6)
+        r = ttk.Frame(parent); r.pack(fill=tk.X)
+        ttk.Button(r, text="Iniciar PAI", command=self.start_pipes_pai).pack(side=tk.LEFT)
+        ttk.Button(r, text="Iniciar FILHO", command=self.start_pipes_filho).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Parar PAI/FILHO", command=self.stop_pipes).pack(side=tk.LEFT, padx=6)
 
     def _build_sockets(self, parent):
-        r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
-        ttk.Label(r1, text="Mensagem do cliente (se suportado):").pack(side=tk.LEFT)
-        self.msg_sock = ttk.Entry(r1); self.msg_sock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_sock.insert(0, "Olá servidor (o cliente atual pode ignorar)")
-
-        r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
-        ttk.Button(r2, text="Iniciar Servidor", command=self.start_sock_server).pack(side=tk.LEFT)
-        ttk.Button(r2, text="Iniciar Cliente", command=self.start_sock_client).pack(side=tk.LEFT, padx=6)
-        ttk.Button(r2, text="Parar Servidor/Cliente", command=self.stop_sockets).pack(side=tk.LEFT, padx=6)
+        r = ttk.Frame(parent); r.pack(fill=tk.X)
+        ttk.Button(r, text="Iniciar Servidor", command=self.start_sock_server).pack(side=tk.LEFT)
+        ttk.Button(r, text="Iniciar Cliente (usa mensagem acima, se suportado)", command=self.start_sock_client).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Parar Servidor/Cliente", command=self.stop_sockets).pack(side=tk.LEFT, padx=6)
 
     def _build_shm(self, parent):
-        r1 = ttk.Frame(parent); r1.pack(fill=tk.X, pady=4)
-        ttk.Label(r1, text="Mensagem (se suportado):").pack(side=tk.LEFT)
-        self.msg_shm = ttk.Entry(r1); self.msg_shm.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-        self.msg_shm.insert(0, "Hello SHM")
+        info = ("Observação: a mensagem acima é usada no botão Write.\n"
+                "Use os botões abaixo para ações no SHM.")
+        ttk.Label(parent, text=info).pack(anchor="w", pady=(0,8))
+        r = ttk.Frame(parent); r.pack(fill=tk.X)
+        ttk.Button(r, text="Status", command=self.shm_status).pack(side=tk.LEFT)
+        ttk.Button(r, text="Read", command=self.shm_read).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Clear", command=self.shm_clear).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Write", command=self.shm_write).pack(side=tk.LEFT, padx=6)
 
-        r2 = ttk.Frame(parent); r2.pack(fill=tk.X, pady=6)
-        ttk.Button(r2, text="Executar SHM", command=self.start_shm).pack(side=tk.LEFT)
-        ttk.Button(r2, text="Parar SHM", command=self.stop_shm).pack(side=tk.LEFT, padx=6)
-
-        ttk.Label(parent, text="Observação: implemente seu app SHM para imprimir JSON por linha (type/message) ou texto cru.\n"
-                               "O log interpreta JSON automaticamente; caso contrário, mostra como [RAW].").pack(anchor="w", pady=(8,0))
-
-    def _on_sel(self, _e=None):
-        self._show_section(self.sel.get())
-
-    def _show_section(self, name: str):
+    def _show(self, which: str):
         for f in (self.sec_pipes, self.sec_sockets, self.sec_shm):
             f.pack_forget()
-        if name.startswith("Pipes"):
+        if which.startswith("Pipes"):
             self.sec_pipes.pack(fill=tk.X)
-        elif name.startswith("Sockets"):
+        elif which.startswith("Sockets"):
             self.sec_sockets.pack(fill=tk.X)
         else:
             self.sec_shm.pack(fill=tk.X)
 
-    # ---------- logging ----------
-    def _log(self, text: str, tag=None):
+    # --------- Log helpers ---------
+    def _log(self, text, tag=None):
         self.log.configure(state="normal")
-        if tag:
-            self.log.insert(tk.END, text + "\n", tag)
-        else:
-            self.log.insert(tk.END, text + "\n")
+        self.log.insert(tk.END, text + "\n", tag)
         self.log.configure(state="disabled")
         self.log.see(tk.END)
 
-    def _enqueue_json(self, d: dict):
-        try:
-            self.log_q.put_nowait(json.dumps(d))
-        except Exception as e:
-            self.log_q.put_nowait(json.dumps({"source":"SYS","type":"error","message":f"Falha ao enfileirar: {e}"}))
+    def _enqueue(self, d: dict):
+        self.log_q.put_nowait(json.dumps(d))
 
-    def _inject_and_enqueue(self, raw_line: str, role: str):
-        raw_line = raw_line.rstrip("\n")
-        if not raw_line:
-            return
+    def _inject_or_raw(self, raw, role):
+        raw = raw.rstrip("\n")
+        if not raw: return
         try:
-            obj = json.loads(raw_line)
+            obj = json.loads(raw)
             if "source" not in obj:
                 obj["source"] = role
-            self._enqueue_json(obj)
+            self._enqueue(obj)
         except json.JSONDecodeError:
-            self._enqueue_json({"source": role, "type": "raw", "message": raw_line})
+            self._enqueue({"source": role, "type":"raw", "message": raw})
 
-    def _drain_log(self):
+    def _drain(self):
         try:
             while not self.log_q.empty():
-                line = self.log_q.get_nowait()
-                try:
-                    d = json.loads(line)
-                    source = d.get("source", "SYS")
-                    typ    = d.get("type", "log")
-                    msg    = d.get("message", "")
-                    tag = {
-                        "SYS":"SYS",
-                        "PIPES-PAI":"PIPES-PAI",
-                        "PIPES-FILHO":"PIPES-FILHO",
-                        "SOCKET-SERVER":"SOCKET-SERVER",
-                        "SOCKET-CLIENT":"SOCKET-CLIENT",
-                        "SHM":"SHM"
-                    }.get(source, "SYS")
-                    if typ.lower() == "error":
-                        tag = "ERR"
-                    self._log(f"[{source} - {typ}]: {msg}", tag)
-                except Exception:
-                    self._log(str(line), "SYS")
+                j = json.loads(self.log_q.get_nowait())
+                source = j.get("source","SYS")
+                typ    = j.get("type","log")
+                msg    = j.get("message")
+                if not msg:
+                    # imprime o JSON inteiro se não houver 'message'
+                    msg = json.dumps(j, ensure_ascii=False)
+                tag = {
+                    "SYS":"SYS","PIPES-PAI":"PIPES-PAI","PIPES-FILHO":"PIPES-FILHO",
+                    "SOCKET-SERVER":"SOCKET-SERVER","SOCKET-CLIENT":"SOCKET-CLIENT",
+                    "SHM":"SHM"
+                }.get(source, "SYS")
+                if typ.lower()=="error": tag="ERR"
+                self._log(f"[{source} - {typ}]: {msg}", tag)
         finally:
-            self.after(100, self._drain_log)
+            self.after(100, self._drain)
 
-    # ---------- runner helpers ----------
+    # --------- Exec helpers ---------
     def _spawn(self, args, role):
         exe = str(args[0])
         cwd = os.getcwd()
         if not os.path.exists(exe):
             self._log(f"[SYS - error]: Executável não encontrado: {exe}", "ERR")
+            self._log(f"[SYS - info]: PROJECT_ROOT={PROJECT_ROOT}", "SYS")
             self._log(f"[SYS - info]: CWD={cwd}", "SYS")
             return None
 
@@ -203,7 +179,7 @@ class FrontIPC(tk.Tk):
             proc = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # junta stderr -> evita deadlock e não perde erro
+                stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1
             )
@@ -211,12 +187,13 @@ class FrontIPC(tk.Tk):
             self._log(f"[SYS - error]: Falha ao iniciar {role}: {e}", "ERR")
             return None
 
-        # aviso se ficar "mudo" (sem \n/flush)
-        def _warn_if_silent():
-            if proc.poll() is None:
+        self._seen_output[role] = False
+
+        def warn_if_silent():
+            if proc.poll() is None and not self._seen_output.get(role, False):
                 self._log(f"[SYS - warn]: {role} ainda sem saída. "
                           f"Garanta que o backend imprime linhas com '\\n' (std::endl).", "SYS")
-        self.after(2000, _warn_if_silent)
+        self.after(2000, warn_if_silent)
 
         t = threading.Thread(target=self._pump, args=(proc, role), daemon=True)
         t.start()
@@ -225,85 +202,60 @@ class FrontIPC(tk.Tk):
     def _pump(self, proc, role):
         try:
             for line in iter(proc.stdout.readline, ''):
-                self._inject_and_enqueue(line, role)
+                if not self._seen_output.get(role, False):
+                    self._seen_output[role] = True
+                self._inject_or_raw(line, role)
             proc.stdout.close()
             rc = proc.wait()
-            self._enqueue_json({"source":"SYS","type":"log","message":f"{role} finalizado (rc={rc})."})
+            self._enqueue({"source":"SYS","type":"log","message":f"{role} finalizado (rc={rc})."})
         except Exception as e:
-            self._enqueue_json({"source":"SYS","type":"error","message":f"{role} erro: {e}"})
+            self._enqueue({"source":"SYS","type":"error","message":f"{role} erro: {e}"})
 
-    # ---------- Pipes ----------
+    # --------- Pipes ---------
     def start_pipes_pai(self):
-        args = [str(EXE_PIPES_PAI)]
-        msg = self.msg_pipes.get().strip()
-        if msg:
-            args.append(msg)  # só se seu PAI aceitar argv[1]
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_PIPES_PAI)] + ([msg] if msg else [])
         self.proc_pai = self._spawn(args, "PIPES-PAI")
 
     def start_pipes_filho(self):
-        args = [str(EXE_PIPES_FILHO)]
-        msg = self.msg_pipes.get().strip()
-        if msg:
-            args.append(msg)  # só se seu FILHO aceitar argv[1]
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_PIPES_FILHO)] + ([msg] if msg else [])
         self.proc_filho = self._spawn(args, "PIPES-FILHO")
 
     def stop_pipes(self):
-        stopped = []
-        for name, p in (("PAI", self.proc_pai), ("FILHO", self.proc_filho)):
+        stopped=[]
+        for name,p in (("PAI",self.proc_pai),("FILHO",self.proc_filho)):
             if p and p.poll() is None:
-                try:
-                    p.terminate()
-                    stopped.append(name)
-                except Exception as e:
-                    self._enqueue_json({"source":"SYS","type":"error","message":f"Falha ao parar {name}: {e}"})
-        if stopped:
-            self._enqueue_json({"source":"SYS","type":"log","message":"Parados: " + ", ".join(stopped)})
-        else:
-            self._log("[SYS - log]: Nenhum processo Pipes em execução.", "SYS")
+                try: p.terminate(); stopped.append(name)
+                except Exception as e: self._enqueue({"source":"SYS","type":"error","message":f"Falha parar {name}: {e}"})
+        if stopped: self._enqueue({"source":"SYS","type":"log","message":"Parados: "+", ".join(stopped)})
+        else: self._log("[SYS - log]: Nenhum processo Pipes em execução.", "SYS")
 
-    # ---------- Sockets ----------
+    # --------- Sockets ---------
     def start_sock_server(self):
         self.proc_sock_srv = self._spawn([str(EXE_SOCK_SERVER)], "SOCKET-SERVER")
 
     def start_sock_client(self):
-        # se seu cliente aceitar argv[1], passe a mensagem:
-        # msg = self.msg_sock.get().strip()
-        # args = [str(EXE_SOCK_CLIENT)] + ([msg] if msg else [])
-        args = [str(EXE_SOCK_CLIENT)]
-        self.proc_sock_cli = self._spawn(args, "SOCKET-CLIENT")
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_SOCK_CLIENT)] + ([msg] if msg else [])
+        self.proc_sock_cli  = self._spawn(args, "SOCKET-CLIENT")
 
     def stop_sockets(self):
-        stopped = []
-        for name, p in (("Servidor", self.proc_sock_srv), ("Cliente", self.proc_sock_cli)):
+        stopped=[]
+        for name,p in (("Servidor",self.proc_sock_srv),("Cliente",self.proc_sock_cli)):
             if p and p.poll() is None:
-                try:
-                    p.terminate()
-                    stopped.append(name)
-                except Exception as e:
-                    self._enqueue_json({"source":"SYS","type":"error","message":f"Falha ao parar {name}: {e}"})
-        if stopped:
-            self._enqueue_json({"source":"SYS","type":"log","message":"Parados: " + ", ".join(stopped)})
-        else:
-            self._log("[SYS - log]: Nenhum processo Sockets em execução.", "SYS")
+                try: p.terminate(); stopped.append(name)
+                except Exception as e: self._enqueue({"source":"SYS","type":"error","message":f"Falha parar {name}: {e}"})
+        if stopped: self._enqueue({"source":"SYS","type":"log","message":"Parados: "+", ".join(stopped)})
+        else: self._log("[SYS - log]: Nenhum processo Sockets em execução.", "SYS")
 
-    # ---------- SHM ----------
-    def start_shm(self):
-        args = [str(EXE_SHM)]
-        msg = self.msg_shm.get().strip()
-        if msg:
-            args.append(msg)  # se o seu exe aceitar argv[1]
-        self.proc_shm = self._spawn(args, "SHM")
+    # --------- SHM (usa mensagem acima) ---------
+    def shm_status(self): self._spawn([str(EXE_SHM), "status"], "SHM")
+    def shm_read(self):   self._spawn([str(EXE_SHM), "read"],   "SHM")
+    def shm_clear(self):  self._spawn([str(EXE_SHM), "clear"],  "SHM")
+    def shm_write(self):
+        msg = self.msg_var.get().strip()
+        self._spawn([str(EXE_SHM), "write", msg], "SHM")
 
-    def stop_shm(self):
-        if self.proc_shm and self.proc_shm.poll() is None:
-            try:
-                self.proc_shm.terminate()
-                self._enqueue_json({"source":"SYS","type":"log","message":"SHM parado."})
-            except Exception as e:
-                self._enqueue_json({"source":"SYS","type":"error","message":f"Falha ao parar SHM: {e}"})
-        else:
-            self._log("[SYS - log]: Nenhum processo SHM em execução.", "SYS")
-
-# run
 if __name__ == "__main__":
-    FrontIPC().mainloop()
+    App().mainloop()

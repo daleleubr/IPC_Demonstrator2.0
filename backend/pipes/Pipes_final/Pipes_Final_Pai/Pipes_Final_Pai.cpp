@@ -5,6 +5,8 @@
 #include <windows.h>   // API do Windows (para CreatePipe, CreateProcess, etc.)
 #include <stdio.h>     // Para funções de entrada/saída padrão em C
 #include <tchar.h>     // Para lidar com caracteres Unicode/ANSI
+#include "JsonFormatter.h"
+#include <map>
 
 #define BUFSIZE 512  // Tamanho do buffer para leitura/escrita
 
@@ -17,7 +19,10 @@ int main()
     DWORD dwRead, dwWritten;     // Número de bytes lidos/escritos
 
     std::cout << "=== DEMONSTRACAO DE PIPES ANONIMOS NO WINDOWS ===" << std::endl;
+    std::cout << JsonFormatter::formatEvent("demonstration_started",
+        { {"message", "Demonstracao de Pipes Anonimos no Windows"} }) << std::endl;
     std::cout << "==================================================" << std::endl << std::endl;
+    std::cout << JsonFormatter::formatEvent("section_separator") << std::endl;
 
     // Configurar os atributos de segurança para o pipe
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -26,12 +31,18 @@ int main()
 
     // Passo 1: Criar o pipe anônimo
     std::cout << "1. Criando pipe anonimo..." << std::endl;
+    std::cout << JsonFormatter::formatEvent("pipe_creation_started") << std::endl;
+
+    // Inicialize os handles antes de usá-los para evitar o uso de valores indefinidos
+    hReadPipe = NULL;
+    hWritePipe = NULL;
 
     fSuccess = CreatePipe(&hReadPipe, &hWritePipe, &saAttr, 0);
 
     // Verificar se a criação do pipe foi bem-sucedida
     if (!fSuccess) {
-        std::cerr << "ERRO: CreatePipe falhou. Código: " << GetLastError() << std::endl;
+        std::cerr << JsonFormatter::formatError("pipe_creation_failed",
+            { {"error_code", std::to_string(GetLastError())} }) << std::endl;
         return 1;
     }
 
@@ -40,11 +51,18 @@ int main()
     std::cout << "   - Handle de leitura: " << hReadPipe << std::endl;
     std::cout << "   - Handle de escrita: " << hWritePipe << std::endl << std::endl;
 
+    std::cout << JsonFormatter::formatEvent("pipe_created", {
+    {"read_handle", std::to_string((long long)hReadPipe)},
+    {"write_handle", std::to_string((long long)hWritePipe)}
+        }) << std::endl;
+
     // Passo 2: Criar o processo filho
+    std::cout << "2. Criando processo filho..." << std::endl;
+    std::cout << JsonFormatter::formatEvent("child_process_creation_started") << std::endl;
+    // Estruturas para criar o processo filho
     PROCESS_INFORMATION piProcInfo;
     STARTUPINFO siStartInfo;
-    TCHAR szCmdline[] = TEXT("Pipes_Final_FIlho.exe"); //TCHAR szCmdline[] = TEXT("child_process"); //TCHAR szCmdline[] = TEXT("notepad.exe C:\\Windows\\System32\\drivers\\etc\\hosts");     
-
+    TCHAR szCmdline[] = TEXT("Pipes_Final_FIlho.exe");
     // Inicializar estruturas
     ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
     ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
@@ -72,13 +90,17 @@ int main()
 
     // Verificar se a criação do processo foi bem-sucedida
     if (!fSuccess) {
-        std::cerr << "ERRO: CreateProcess falhou. Codigo: " << GetLastError() << std::endl;
+        std::cerr << JsonFormatter::formatError("child_process_creation_failed - Error code: " +
+            std::to_string(GetLastError())) << std::endl;
         CloseHandle(hReadPipe);
         CloseHandle(hWritePipe);
         return 1;
     }
 
     std::cout << "   Processo filho criado com sucesso! PID: " << piProcInfo.dwProcessId << std::endl << std::endl;
+    std::cout << JsonFormatter::formatEvent("child_process_created", {
+    {"child_pid", std::to_string(piProcInfo.dwProcessId)}
+        }) << std::endl;
 
     // Fechar o handle de leitura no processo pai (o pai só ira escrever)
     CloseHandle(hReadPipe);
@@ -97,25 +119,36 @@ int main()
 
     // Verificar se a escrita foi bem-sucedida
     if (!fSuccess) {
-        std::cerr << "ERRO: WriteFile falhou. Código: " << GetLastError() << std::endl;
+        std::cerr << JsonFormatter::formatError("write_to_pipe_failed - Error code: " +
+            std::to_string(GetLastError())) << std::endl;
         CloseHandle(hWritePipe);
         return 1;
     }
 
     std::cout << "    " << dwWritten << " bytes escritos no pipe" << std::endl;
     std::cout << "   - Mensagem: \"" << mensagem << "\"" << std::endl << std::endl;
+    std::cout << JsonFormatter::formatEvent("data_written", {
+    {"bytes_written", std::to_string(dwWritten)},
+    {"message", mensagem}
+        }) << std::endl;
 
     // Passo 4: Fechar o handle de escrita para sinalizar EOF ao processo filho
+
+    std::cout << JsonFormatter::formatEvent("pipe_write_end_closed") << std::endl;
     std::cout << "4. Fechando handle de escrita..." << std::endl;
     CloseHandle(hWritePipe);
     std::cout << "    Handle de escrita fechado" << std::endl;
     std::cout << "   - Isso sinaliza EOF para o processo filho" << std::endl << std::endl;
 
     // Passo 5: Esperar o processo filho terminar
+    std::cout << JsonFormatter::formatEvent("waiting_for_child_exit") << std::endl;
     std::cout << "5. Esperando processo filho terminar..." << std::endl;
     WaitForSingleObject(piProcInfo.hProcess, INFINITE);
+    std::cout << JsonFormatter::formatEvent("child_process_exited") << std::endl;
+    std::cout << "   Processo filho finalizado" << std::endl << std::endl;
 
     // Limpeza de recursos 
+    std::cout << JsonFormatter::formatEvent("cleaning_resources") << std::endl;
     std::cout << "6. Limpando recursos..." << std::endl;
     CloseHandle(piProcInfo.hProcess);
     CloseHandle(piProcInfo.hThread);
@@ -126,5 +159,79 @@ int main()
     std::cout << "=== DEMONSTRACAO CONCLUIDA COM SUCESSO! ===" << std::endl;
     return 0;
 }
+// ============================================================================
+// IMPLEMENTAÇÃO DO JSONFORMATER 
+// ============================================================================
 
+std::string JsonFormatter::formatEvent(const std::string& eventType,
+    const std::map<std::string, std::string>& details) {
+
+    std::stringstream json;
+    json << "{\"type\":\"event\",\"event\":\"" << escapeJsonString(eventType)
+        << "\",\"timestamp\":\"" << getCurrentTimestamp() << "\"";
+
+    if (!details.empty()) {
+        json << ",\"details\":{";
+        bool first = true;
+        for (const auto& pair : details) {
+            if (!first) json << ",";
+            json << "\"" << escapeJsonString(pair.first) << "\":\""
+                << escapeJsonString(pair.second) << "\"";
+            first = false;
+        }
+        json << "}";
+    }
+    json << "}";
+    return json.str();
+}
+
+std::string JsonFormatter::formatError(const std::string& errorMessage,
+    const std::map<std::string, std::string>& details) {
+    std::stringstream json;
+    json << "{\"type\":\"error\",\"timestamp\":\"" << getCurrentTimestamp()
+        << "\",\"message\":\"" << escapeJsonString(errorMessage) << "\"";
+
+    if (!details.empty()) {
+        json << ",\"details\":{";
+        bool first = true;
+        for (const auto& pair : details) {
+            if (!first) json << ",";
+            json << "\"" << escapeJsonString(pair.first) << "\":\""
+                << escapeJsonString(pair.second) << "\"";
+            first = false;
+        }
+        json << "}";
+    }
+    json << "}";
+    return json.str();
+}
+
+std::string JsonFormatter::getCurrentTimestamp() {
+    auto now = std::time(nullptr);
+    std::tm localTime;
+    localtime_s(&localTime, &now);
+
+    std::stringstream ss;
+    ss << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+
+std::string JsonFormatter::escapeJsonString(const std::string& input) {
+    std::string output;
+    output.reserve(input.length());
+
+    for (char c : input) {
+        switch (c) {
+        case '"':  output += "\\\""; break;
+        case '\\': output += "\\\\"; break;
+        case '\b': output += "\\b"; break;
+        case '\f': output += "\\f"; break;
+        case '\n': output += "\\n"; break;
+        case '\r': output += "\\r"; break;
+        case '\t': output += "\\t"; break;
+        default:   output += c; break;
+        }
+    }
+    return output;
+}
 
