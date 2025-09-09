@@ -20,6 +20,8 @@ static std::string escape_json(const std::string& s) {
 }
 
 int main(int argc, char* argv[]) {
+    std::ios::sync_with_stdio(false);
+    std::cout.setf(std::ios::unitbuf);
     if (argc < 2) {
         std::cout << "{\"error\":\"Uso: shm_app.exe <status|read|write|clear> [dados]\"}\n";
         return 1;
@@ -54,10 +56,12 @@ int main(int argc, char* argv[]) {
     }
     else if (command == "status") {
         std::cout << shm.get_status_json() << "\n";
+        std::endl;
     }
     else if (command == "clear") {
         shm.clear_memory();
         std::cout << "{\"ok\":true,\"event\":\"clear\"}\n";
+        std::endl;
     }
     else {
         std::cout << "{\"ok\":false,\"error\":\"Comando invalido: " << escape_json(command) << "\"}\n";

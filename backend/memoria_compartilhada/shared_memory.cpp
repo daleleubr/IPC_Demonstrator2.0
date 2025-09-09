@@ -155,22 +155,22 @@ bool SharedMemory::write_data(const std::string& data) {
 std::string SharedMemory::read_data() {
     if (!is_initialized_) return "ERROR: Shared memory not initialized";
 
-    // Tenta consumir semáforo sem bloquear (timeout 0 ms).
+    // Tenta consumir o semáforo sem bloquear (timeout 0 ms).
     DWORD w = WaitForSingleObject(sem_read_, 0);
     if (w == WAIT_OBJECT_0) {
-        // Havia sinal: consome e libera escrita
+        // Havia dado sinalizado: consome e libera escrita
         std::string data(static_cast<char*>(shm_ptr_));
         ReleaseSemaphore(sem_write_, 1, NULL);
         return data;
     }
     if (w == WAIT_TIMEOUT) {
-        // Não havia sinal (porque o processo writer já morreu e os semáforos foram recriados com 0)
-        // Retorna o conteúdo atual mesmo assim, sem bloquear.
+        // Ninguém sinalizou (ex.: novo processo read). Retorna conteúdo atual mesmo assim.
         return std::string(static_cast<char*>(shm_ptr_));
     }
-    // Qualquer outro erro
+    // Qualquer erro inesperado
     return "ERROR: read wait failed";
 }
+
 
 void SharedMemory::clear_memory() {
     if (shm_ptr_ && is_initialized_) {
