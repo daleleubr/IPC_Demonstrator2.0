@@ -17,8 +17,8 @@ def find_project_root(start: Path) -> Path:
 PROJECT_ROOT = find_project_root(HERE)
 
 # Ajuste os nomes se os .exe estiverem em Debug/Release etc.
-EXE_PIPES_PAI   = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai"   / "Release" / "Pipes_Final_Pai.exe").resolve()
-EXE_PIPES_FILHO = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai"   / "Release" / "Pipes_Final_FIlho.exe").resolve()
+EXE_PIPES_PAI   = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_Pai.exe").resolve()
+EXE_PIPES_FILHO = (PROJECT_ROOT / "backend" / "pipes" / "Pipes_final" / "Pipes_Final_Pai" / "Release" / "Pipes_Final_FIlho.exe").resolve()
 EXE_SOCK_SERVER = (PROJECT_ROOT / "backend"  / "sockets" / "server.exe").resolve()
 EXE_SOCK_CLIENT = (PROJECT_ROOT / "backend"  / "sockets" / "cliente.exe").resolve()
 EXE_SHM         = (PROJECT_ROOT / "backend"  / "memoria_compartilhada" / "shm_app.exe").resolve()  # versão Win32
@@ -28,8 +28,8 @@ IPC_LIST = ["Pipes", "Sockets", "Memória Compartilhada"]
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("IPC – Frontend (sem input de mensagens)")
-        self.geometry("920x560")
+        self.title("IPC – Frontend (com input de mensagem)")
+        self.geometry("980x600")
 
         self.log_q = queue.Queue()
         self._seen_output = {}
@@ -48,6 +48,14 @@ class App(tk.Tk):
         self.sel.set("Sockets")
         self.sel.pack(side=tk.LEFT, padx=8)
         self.sel.bind("<<ComboboxSelected>>", lambda _e: self._show(self.sel.get()))
+
+        # barra de mensagem (global)
+        msgf = ttk.Frame(self, padding=(10,6,10,0))
+        msgf.pack(fill=tk.X)
+        ttk.Label(msgf, text="Mensagem para teste:").pack(side=tk.LEFT)
+        self.msg_var = tk.StringVar(value="Hello IPC")
+        self.msg_entry = ttk.Entry(msgf, textvariable=self.msg_var, width=60)
+        self.msg_entry.pack(side=tk.LEFT, padx=8, fill=tk.X, expand=True)
 
         # container de seções
         self.body = ttk.Frame(self, padding=10); self.body.pack(fill=tk.X)
@@ -90,18 +98,18 @@ class App(tk.Tk):
     def _build_sockets(self, parent):
         r = ttk.Frame(parent); r.pack(fill=tk.X)
         ttk.Button(r, text="Iniciar Servidor", command=self.start_sock_server).pack(side=tk.LEFT)
-        ttk.Button(r, text="Iniciar Cliente", command=self.start_sock_client).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Iniciar Cliente (usa mensagem acima, se suportado)", command=self.start_sock_client).pack(side=tk.LEFT, padx=6)
         ttk.Button(r, text="Parar Servidor/Cliente", command=self.stop_sockets).pack(side=tk.LEFT, padx=6)
 
     def _build_shm(self, parent):
-        info = ("Observação: mensagens são definidas no próprio programa.\n"
-                "Use os botões abaixo apenas para acionar ações sem payload.")
+        info = ("Observação: a mensagem acima é usada no botão Write.\n"
+                "Use os botões abaixo para ações no SHM.")
         ttk.Label(parent, text=info).pack(anchor="w", pady=(0,8))
         r = ttk.Frame(parent); r.pack(fill=tk.X)
         ttk.Button(r, text="Status", command=self.shm_status).pack(side=tk.LEFT)
         ttk.Button(r, text="Read", command=self.shm_read).pack(side=tk.LEFT, padx=6)
         ttk.Button(r, text="Clear", command=self.shm_clear).pack(side=tk.LEFT, padx=6)
-        ttk.Button(r, text="Write (Hello)", command=self.shm_write_test).pack(side=tk.LEFT, padx=6)
+        ttk.Button(r, text="Write", command=self.shm_write).pack(side=tk.LEFT, padx=6)
 
     def _show(self, which: str):
         for f in (self.sec_pipes, self.sec_sockets, self.sec_shm):
@@ -204,8 +212,15 @@ class App(tk.Tk):
             self._enqueue({"source":"SYS","type":"error","message":f"{role} erro: {e}"})
 
     # --------- Pipes ---------
-    def start_pipes_pai(self):   self.proc_pai   = self._spawn([str(EXE_PIPES_PAI)],   "PIPES-PAI")
-    def start_pipes_filho(self): self.proc_filho = self._spawn([str(EXE_PIPES_FILHO)], "PIPES-FILHO")
+    def start_pipes_pai(self):
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_PIPES_PAI)] + ([msg] if msg else [])
+        self.proc_pai = self._spawn(args, "PIPES-PAI")
+
+    def start_pipes_filho(self):
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_PIPES_FILHO)] + ([msg] if msg else [])
+        self.proc_filho = self._spawn(args, "PIPES-FILHO")
 
     def stop_pipes(self):
         stopped=[]
@@ -217,8 +232,13 @@ class App(tk.Tk):
         else: self._log("[SYS - log]: Nenhum processo Pipes em execução.", "SYS")
 
     # --------- Sockets ---------
-    def start_sock_server(self): self.proc_sock_srv = self._spawn([str(EXE_SOCK_SERVER)], "SOCKET-SERVER")
-    def start_sock_client(self): self.proc_sock_cli  = self._spawn([str(EXE_SOCK_CLIENT)], "SOCKET-CLIENT")
+    def start_sock_server(self):
+        self.proc_sock_srv = self._spawn([str(EXE_SOCK_SERVER)], "SOCKET-SERVER")
+
+    def start_sock_client(self):
+        msg = self.msg_var.get().strip()
+        args = [str(EXE_SOCK_CLIENT)] + ([msg] if msg else [])
+        self.proc_sock_cli  = self._spawn(args, "SOCKET-CLIENT")
 
     def stop_sockets(self):
         stopped=[]
@@ -229,12 +249,13 @@ class App(tk.Tk):
         if stopped: self._enqueue({"source":"SYS","type":"log","message":"Parados: "+", ".join(stopped)})
         else: self._log("[SYS - log]: Nenhum processo Sockets em execução.", "SYS")
 
-    # --------- SHM (sem payload) ---------
+    # --------- SHM (usa mensagem acima) ---------
     def shm_status(self): self._spawn([str(EXE_SHM), "status"], "SHM")
     def shm_read(self):   self._spawn([str(EXE_SHM), "read"],   "SHM")
     def shm_clear(self):  self._spawn([str(EXE_SHM), "clear"],  "SHM")
-    def shm_write_test(self):
-        self._spawn([str(EXE_SHM), "write", "Hello IPC"], "SHM")
+    def shm_write(self):
+        msg = self.msg_var.get().strip()
+        self._spawn([str(EXE_SHM), "write", msg], "SHM")
 
 if __name__ == "__main__":
     App().mainloop()
