@@ -161,7 +161,7 @@ class App(tk.Tk):
                 self._log(f"[{source} - {typ}]: {msg}", tag)
         finally:
             self.after(100, self._drain)
-
+       
     # --------- Exec helpers ---------
     def _spawn(self, args, role):
         exe = str(args[0])
