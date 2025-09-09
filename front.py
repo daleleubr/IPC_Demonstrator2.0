@@ -19,7 +19,7 @@ EXE_PIPES_FILHO = (HERE / "frontend" / "Pipes" / "Pipes_final" / "Pipes_Final_FI
 
 # Sockets (compile seus .cpp em .exe com esses nomes)
 EXE_SOCK_SERVER = (HERE / "backend" / "sockets" / "server.exe").resolve()
-EXE_SOCK_CLIENT = (HERE / "backend" / "sockets" / "client.exe").resolve()
+EXE_SOCK_CLIENT = (HERE / "backend" / "sockets" / "cliente.exe").resolve()
 
 # Memória Compartilhada (placeholder)
 EXE_SHM         = (HERE / "backend" / "memoria_compartilhada" / "shm_app.exe").resolve()
