@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 
-// json_escape local (não acessa nada da classe)
+// json_escape local — não depende da classe
 static std::string json_escape(const std::string& s) {
     std::string out; out.reserve(s.size() + 16);
     for (unsigned char c : s) {
@@ -23,11 +23,11 @@ static std::string json_escape(const std::string& s) {
     return out;
 }
 
-static void print_json(const std::string& s) {
-    std::cout << s << std::endl; // 1 linha p/ o front
+static inline void print_json(const std::string& line) {
+    std::cout << line << std::endl; // 1 linha (o front lê por linha)
 }
 
-static void log_kv(const std::string& type, const std::string& msg) {
+static void log_kv(const char* type, const std::string& msg) {
     std::ostringstream os;
     os << "{\"source\":\"SHM\",\"type\":\"" << type
         << "\",\"message\":\"" << json_escape(msg) << "\"}";
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::string cmd = (argc >= 2 ? argv[1] : "status");
+    const std::string cmd = (argc >= 2 ? argv[1] : "status");
 
     if (cmd == "write") {
         std::string payload;
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         else {
             payload = "Hello IPC";
         }
-        bool ok = shm.write_data(payload);
+        const bool ok = shm.write_data(payload);
         std::ostringstream os;
         os << "{"
             << "\"ok\":" << (ok ? "true" : "false") << ","
@@ -62,8 +62,9 @@ int main(int argc, char** argv) {
         print_json(os.str());
         return ok ? 0 : 1;
     }
-    else if (cmd == "read") {
-        std::string data = shm.read_data();
+
+    if (cmd == "read") {
+        const std::string data = shm.read_data();
         std::ostringstream os;
         os << "{"
             << "\"event\":\"read\","
@@ -73,20 +74,18 @@ int main(int argc, char** argv) {
         print_json(os.str());
         return 0;
     }
-    else if (cmd == "clear") {
+
+    if (cmd == "clear") {
         shm.clear_memory();
         print_json("{\"ok\":true,\"event\":\"clear\",\"source\":\"SHM\"}");
         return 0;
     }
-    else { // status
-        std::string st = shm.get_status_json();
-        // acrescenta "source" para o front
-        if (!st.empty() && st.back() == '}')
-            st.back() = '\0', st.pop_back(); // remove '}' final
-        std::ostringstream os;
-        os << (st.empty() ? "{" : st) << (st.empty() ? "" : ",")
-            << "\"source\":\"SHM\"}";
-        print_json(os.str());
-        return 0;
-    }
+
+    // status
+    const std::string st = shm.get_status_json();   // já é um JSON completo
+    // embrulha como campo "data" sem mexer no conteúdo:
+    std::ostringstream os;
+    os << "{\"source\":\"SHM\",\"type\":\"status\",\"data\":" << st << "}";
+    print_json(os.str());
+    return 0;
 }
