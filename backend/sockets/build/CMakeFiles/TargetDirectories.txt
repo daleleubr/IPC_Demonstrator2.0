@@ -1,0 +1,4 @@
+C:/Users/sanch/source/repos/IPC_Demonstrator2.0/backend/sockets/build/CMakeFiles/test_common.dir
+C:/Users/sanch/source/repos/IPC_Demonstrator2.0/backend/sockets/build/CMakeFiles/RUN_TESTS.dir
+C:/Users/sanch/source/repos/IPC_Demonstrator2.0/backend/sockets/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/sanch/source/repos/IPC_Demonstrator2.0/backend/sockets/build/CMakeFiles/ZERO_CHECK.dir
