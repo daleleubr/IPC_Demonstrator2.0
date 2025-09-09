@@ -1,38 +1,45 @@
-#include <gtest/gtest.h>
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include "common.h"
 
-class ClientTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        if (!init_winsock()) {
-            GTEST_SKIP() << "Winsock initialization failed";
-        }
+#pragma comment(lib, "ws2_32.lib")
+
+int main() {
+    std::cout << "=== TESTE CLIENT ===" << std::endl;
+
+    if (!init_winsock()) {
+        std::cout << "ERRO: Falha na inicializacao do Winsock!" << std::endl;
+        return 1;
     }
 
-    void TearDown() override {
+    // Teste 1: Criacao do socket
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+        std::cout << "ERRO: Falha ao criar socket!" << std::endl;
         cleanup_winsock();
+        return 1;
     }
-};
+    std::cout << "âœ“ Socket criado com sucesso" << std::endl;
 
-TEST_F(ClientTest, SocketCreation) {
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    EXPECT_NE(sock, INVALID_SOCKET);
-    if (sock != INVALID_SOCKET) {
-        closesocket(sock);
-    }
-}
-
-TEST_F(ClientTest, InvalidConnection) {
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_NE(sock, INVALID_SOCKET);
-
+    // Teste 2: Tentativa de conexao com porta invalida
     sockaddr_in hint{};
     hint.sin_family = AF_INET;
-    hint.sin_port = htons(9999); // Porta inválida
+    hint.sin_port = htons(9999); // Porta invalida
     hint.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    // Deve falhar ao conectar com porta inválida
-    EXPECT_EQ(connect(sock, (sockaddr*)&hint, sizeof(hint)), SOCKET_ERROR);
+    int connect_result = connect(sock, (sockaddr*)&hint, sizeof(hint));
+    if (connect_result != SOCKET_ERROR) {
+        std::cout << "ERRO: Conexao deveria ter falhado com porta invalida!" << std::endl;
+        closesocket(sock);
+        cleanup_winsock();
+        return 1;
+    }
+    std::cout << "âœ“ Conexao com porta invalida falhou corretamente" << std::endl;
 
     closesocket(sock);
+    cleanup_winsock();
+
+    std::cout << "=== TODOS OS TESTES CLIENT PASSARAM! ===" << std::endl;
+    return 0;
 }
