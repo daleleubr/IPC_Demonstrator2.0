@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.12)
 project(SocketTests)
 
-# Foda-se o GoogleTest, vamos compilar sem
 enable_testing()
 
-# Apenas 1 teste
+
 add_executable(test_common test_common.cpp)
 target_link_libraries(test_common ws2_32)
 
-# Adiciona como teste
 add_test(NAME test_common COMMAND test_common)
