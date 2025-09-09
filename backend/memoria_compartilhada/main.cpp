@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 
-// json_escape local — não depende da classe
+// json_escape local — independente da classe
 static std::string json_escape(const std::string& s) {
     std::string out; out.reserve(s.size() + 16);
     for (unsigned char c : s) {
@@ -24,7 +24,8 @@ static std::string json_escape(const std::string& s) {
 }
 
 static inline void print_json(const std::string& line) {
-    std::cout << line << std::endl; // 1 linha (o front lê por linha)
+    std::cout << line << '\n';
+    std::cout.flush(); // <- garante que o front receba a linha
 }
 
 static void log_kv(const char* type, const std::string& msg) {
@@ -81,11 +82,12 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // status
-    const std::string st = shm.get_status_json();   // já é um JSON completo
-    // embrulha como campo "data" sem mexer no conteúdo:
-    std::ostringstream os;
-    os << "{\"source\":\"SHM\",\"type\":\"status\",\"data\":" << st << "}";
-    print_json(os.str());
-    return 0;
+    // -------- status (garantindo linha + flush + retorno) --------
+    {
+        const std::string st = shm.get_status_json(); // JSON válido
+        std::ostringstream os;
+        os << "{\"source\":\"SHM\",\"type\":\"status\",\"data\":" << st << "}";
+        print_json(os.str());  // imprime 1 linha e dá flush
+        return 0;              // <- termina o processo (o front mostra "SHM finalizado (rc=0)")
+    }
 }
