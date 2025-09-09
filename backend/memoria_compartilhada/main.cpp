@@ -3,13 +3,28 @@
 #include <string>
 #include <sstream>
 
-// util p/ JSON simples
+// json_escape local (não acessa nada da classe)
 static std::string json_escape(const std::string& s) {
-    return SharedMemory::json_escape(s); // reusa do header
+    std::string out; out.reserve(s.size() + 16);
+    for (unsigned char c : s) {
+        switch (c) {
+        case '\"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\b': out += "\\b";  break;
+        case '\f': out += "\\f";  break;
+        case '\n': out += "\\n";  break;
+        case '\r': out += "\\r";  break;
+        case '\t': out += "\\t";  break;
+        default:
+            if (c < 0x20) { char b[7]; std::snprintf(b, sizeof(b), "\\u%04x", c); out += b; }
+            else out += (char)c;
+        }
+    }
+    return out;
 }
 
 static void print_json(const std::string& s) {
-    std::cout << s << std::endl; // 1 linha (front lê por linha)
+    std::cout << s << std::endl; // 1 linha p/ o front
 }
 
 static void log_kv(const std::string& type, const std::string& msg) {
@@ -20,7 +35,7 @@ static void log_kv(const std::string& type, const std::string& msg) {
 }
 
 int main(int argc, char** argv) {
-    SharedMemory shm(1025); // mesmo tamanho que você já usava (~1 KB)
+    SharedMemory shm(1025);
     if (!shm.initialize()) {
         log_kv("error", "Falha ao inicializar arquivo mapeado");
         return 1;
@@ -31,13 +46,11 @@ int main(int argc, char** argv) {
     if (cmd == "write") {
         std::string payload;
         if (argc >= 3) {
-            // junta argv[2..]
             for (int i = 2; i < argc; ++i) { if (i > 2) payload += ' '; payload += argv[i]; }
         }
         else {
             payload = "Hello IPC";
         }
-
         bool ok = shm.write_data(payload);
         std::ostringstream os;
         os << "{"
@@ -67,15 +80,12 @@ int main(int argc, char** argv) {
     }
     else { // status
         std::string st = shm.get_status_json();
-        // anexa "source" para o front manter a tag
+        // acrescenta "source" para o front
+        if (!st.empty() && st.back() == '}')
+            st.back() = '\0', st.pop_back(); // remove '}' final
         std::ostringstream os;
-        if (!st.empty() && st.back() == '}') {
-            st.pop_back();
-            os << st << ",\"source\":\"SHM\"}";
-        }
-        else {
-            os << "{\"source\":\"SHM\"}";
-        }
+        os << (st.empty() ? "{" : st) << (st.empty() ? "" : ",")
+            << "\"source\":\"SHM\"}";
         print_json(os.str());
         return 0;
     }
